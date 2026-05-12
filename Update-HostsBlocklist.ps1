@@ -30,6 +30,9 @@ $LastSuccessPath = Join-Path $BaseDir "last_success.txt"
 $BlockedDomainsFile = Join-Path $BaseDir "blocked-domains.txt"
 $AllowedDomainsFile = Join-Path $BaseDir "allowed-domains.txt"
 
+$RemoteBlockedDomainsUrl = "https://raw.githubusercontent.com/dudefish2700/hosts-control/refs/heads/main/blocked-domains.txt"
+$RemoteAllowedDomainsUrl = "https://raw.githubusercontent.com/dudefish2700/hosts-control/refs/heads/main/allowed-domains.txt"
+
 $LocalStartMarker = "# BEGIN MANAGED LOCAL HOSTS POLICY"
 $LocalEndMarker   = "# END MANAGED LOCAL HOSTS POLICY"
 
