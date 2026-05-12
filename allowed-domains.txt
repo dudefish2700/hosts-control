@@ -1,0 +1,36 @@
+# One allowed domain per line.
+# Blank lines and lines starting with # are ignored.
+# If you add example.com, the script also allows subdomains like www.example.com.
+# Examples:
+# example.com
+# www.example.com
+
+# Add allowlist exceptions below this line:
+icloud.com
+phantom.app
+muslimkids.tv
+apple.com
+y2mate.is
+nams.ws
+socialmediasalesmachine.live
+betterprompts.biz
+innovators.fm
+jup.ag
+wild.link
+cryptoprices.cc
+sonar.watch
+nftstorage.link
+pump.fun
+wsrv.nl
+islamqa.info
+unsplash.com
+pexels.com
+sterope.site
+melinoe.online
+wzstats.gg
+hianime.to
+budgetair.nl
+mozilla.com
+gettyimages.com
+ibkr.info
+shein.com
