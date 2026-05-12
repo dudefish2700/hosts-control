@@ -4,7 +4,8 @@ param(
 
 # Update-HostsBlocklist.ps1
 # Downloads a HOSTS blocklist from GitHub, backs up the current hosts file,
-# applies local policy entries from editable domain files, then flushes DNS.
+# downloads editable blocked/allowed domain lists from your GitHub repo,
+# applies local policy entries, then flushes DNS.
 # Startup runs are skipped unless the last successful update was 7+ days ago.
 # Manual forced run:
 # powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\HostsBlocklist\Update-HostsBlocklist.ps1 -Force
@@ -110,74 +111,10 @@ function Ensure-BlockedDomainsFile {
         "# One blocked domain per line.",
         "# Blank lines and lines starting with # are ignored.",
         "# Do not include 0.0.0.0 here. The script adds that automatically.",
-        "# Examples:",
-        "# example.com",
-        "# www.example.com",
-        "# search.example.com",
         "",
         "duckduckgo.com",
         "www.duckduckgo.com",
-        "start.duckduckgo.com",
-        "",
-        "search.brave.com",
-        "",
-        "search.yahoo.com",
-        "ca.search.yahoo.com",
-        "uk.search.yahoo.com",
-        "",
-        "yandex.com",
-        "www.yandex.com",
-        "yandex.ru",
-        "www.yandex.ru",
-        "",
-        "baidu.com",
-        "www.baidu.com",
-        "m.baidu.com",
-        "",
-        "ecosia.org",
-        "www.ecosia.org",
-        "",
-        "qwant.com",
-        "www.qwant.com",
-        "",
-        "startpage.com",
-        "www.startpage.com",
-        "",
-        "searx.org",
-        "www.searx.org",
-        "searx.space",
-        "www.searx.space",
-        "",
-        "mojeek.com",
-        "www.mojeek.com",
-        "",
-        "swisscows.com",
-        "www.swisscows.com",
-        "",
-        "metager.org",
-        "www.metager.org",
-        "",
-        "you.com",
-        "www.you.com",
-        "",
-        "perplexity.ai",
-        "www.perplexity.ai",
-        "",
-        "kagi.com",
-        "www.kagi.com",
-        "",
-        "ask.com",
-        "www.ask.com",
-        "",
-        "search.aol.com",
-        "",
-        "naver.com",
-        "www.naver.com",
-        "search.naver.com",
-        "",
-        "daum.net",
-        "www.daum.net",
-        "search.daum.net"
+        "start.duckduckgo.com"
     )
 
     $DefaultLines | Set-Content -Path $Path -Encoding ASCII -Force
@@ -194,14 +131,47 @@ function Ensure-AllowedDomainsFile {
         "# One allowed domain per line.",
         "# Blank lines and lines starting with # are ignored.",
         "# If you add example.com, the script also allows subdomains like www.example.com.",
-        "# Examples:",
-        "# example.com",
-        "# www.example.com",
         "",
         "# Add allowlist exceptions below this line:"
     )
 
     $DefaultLines | Set-Content -Path $Path -Encoding ASCII -Force
+}
+
+function Download-RemoteListFile {
+    param(
+        [string]$Url,
+        [string]$DestinationPath,
+        [string]$FriendlyName
+    )
+
+    $tempPath = "$DestinationPath.tmp"
+
+    try {
+        Write-Log "Downloading remote $FriendlyName list."
+        Invoke-WebRequest -Uri $Url -OutFile $tempPath -UseBasicParsing -TimeoutSec 90
+
+        if (-not (Test-Path $tempPath)) {
+            throw "Remote $FriendlyName list download did not create a file."
+        }
+
+        $size = (Get-Item $tempPath).Length
+
+        if ($size -lt 5) {
+            throw "Remote $FriendlyName list looks too small: $size bytes."
+        }
+
+        Move-Item -Path $tempPath -Destination $DestinationPath -Force
+        Write-Log "Remote $FriendlyName list updated locally."
+    }
+    catch {
+        Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
+        Write-Log "WARNING: Could not update remote $FriendlyName list. Keeping existing local file. Error: $($_.Exception.Message)"
+
+        if (-not (Test-Path $DestinationPath)) {
+            throw "Remote $FriendlyName list failed and no local fallback file exists."
+        }
+    }
 }
 
 function Read-DomainFile {
@@ -254,7 +224,6 @@ function Test-DomainAllowed {
         return $true
     }
 
-    # If example.com is allowed, also allow www.example.com, m.example.com, etc.
     $parts = $domainLower.Split('.')
 
     for ($i = 1; $i -lt $parts.Count; $i++) {
@@ -348,12 +317,15 @@ try {
         exit 0
     }
 
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    Download-RemoteListFile -Url $RemoteBlockedDomainsUrl -DestinationPath $BlockedDomainsFile -FriendlyName "blocked domains"
+    Download-RemoteListFile -Url $RemoteAllowedDomainsUrl -DestinationPath $AllowedDomainsFile -FriendlyName "allowed domains"
+
     $AllowedDomains = Read-DomainFile -Path $AllowedDomainsFile
     $AllowedLookup = Build-DomainLookup -Domains $AllowedDomains
 
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-    Write-Log "Downloading HOSTS file from GitHub."
+    Write-Log "Downloading upstream HOSTS file from GitHub."
     Invoke-WebRequest -Uri $SourceUrl -OutFile $DownloadPath -UseBasicParsing -TimeoutSec 180
 
     if (-not (Test-Path $DownloadPath)) {
@@ -399,8 +371,6 @@ try {
         throw "Parsed too few valid hosts entries: $($validHostLines.Count). Refusing to update hosts file."
     }
 
-    # These force approved search providers into strict filtering.
-    # Allowlist does not override these forced strict-filtering entries.
     $ForcedSearchLines = @(
         "216.239.38.120 www.google.com",
         "216.239.38.120 www.google.ca",
