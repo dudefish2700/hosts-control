@@ -49,6 +49,16 @@ function Download-File {
     Move-Item -Path $temp -Destination $Destination -Force
 }
 
+function Remove-ScheduledTaskIfExists {
+    param([string]$Name)
+
+    cmd.exe /c "schtasks /Query /TN `"$Name`" >nul 2>nul"
+
+    if ($LASTEXITCODE -eq 0) {
+        cmd.exe /c "schtasks /Delete /TN `"$Name`" /F >nul 2>nul"
+    }
+}
+
 if (-not (Test-IsAdmin)) {
     throw "This installer must be run as Administrator."
 }
@@ -73,16 +83,20 @@ WScript.Quit exitCode
 
 Write-Host "Creating scheduled task..." -ForegroundColor Cyan
 
-schtasks /Delete /TN "$TaskName" /F 2>$null | Out-Null
+Remove-ScheduledTaskIfExists -Name $TaskName
 
 $OldWord = -join ([char[]](80,111,114,110))
 $OldDailyTask = "Update Anti-$OldWord Hosts File"
 $OldStartupTask = "Update Anti-$OldWord Hosts File At Startup"
 
-schtasks /Delete /TN "$OldDailyTask" /F 2>$null | Out-Null
-schtasks /Delete /TN "$OldStartupTask" /F 2>$null | Out-Null
+Remove-ScheduledTaskIfExists -Name $OldDailyTask
+Remove-ScheduledTaskIfExists -Name $OldStartupTask
 
-schtasks /Create /TN "$TaskName" /SC ONSTART /DELAY 0005:00 /RU SYSTEM /RL HIGHEST /TR "wscript.exe C:\ProgramData\HostsBlocklist\Run-HostsBlocklist-Silent.vbs" /F | Out-Null
+cmd.exe /c "schtasks /Create /TN `"$TaskName`" /SC ONSTART /DELAY 0005:00 /RU SYSTEM /RL HIGHEST /TR `"wscript.exe C:\ProgramData\HostsBlocklist\Run-HostsBlocklist-Silent.vbs`" /F"
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to create scheduled task."
+}
 
 Write-Host "Running first update. This may take a while..." -ForegroundColor Cyan
 
