@@ -3,7 +3,9 @@
 # installs it to C:\ProgramData\HostsBlocklist,
 # creates a silent startup scheduled task,
 # and runs the first update.
-
+param(
+    [switch]$Silent
+)
 $ErrorActionPreference = "Stop"
 
 $InstallDir = "C:\ProgramData\HostsBlocklist"
@@ -118,6 +120,8 @@ Write-Host ""
 Write-Host "Recent log:"
 Get-Content "C:\ProgramData\HostsBlocklist\update.log" -Tail 10 -ErrorAction SilentlyContinue
 
-Write-Host ""
-Write-Host "Press Enter to close."
-Read-Host
+if (-not $Silent) {
+    Write-Host ""
+    Write-Host "Press Enter to close."
+    Read-Host
+}
