@@ -1,7 +1,12 @@
+param(
+    [switch]$ForceUpdate
+)
+
 # Run-HostsBlocklist-FromGitHub.ps1
 # Bootstrapper.
 # Downloads the latest GitHub copies of the updater and domain lists.
 # If any file changed, it runs the updater with -Force.
+# If ForceUpdate is used, it also runs the updater with -Force.
 # If nothing changed, it runs the updater normally.
 
 $ErrorActionPreference = "Stop"
@@ -92,8 +97,8 @@ try {
         $changed = $true
     }
 
-    if ($changed) {
-        Write-BootstrapLog "One or more GitHub files changed. Running updater with -Force."
+    if ($ForceUpdate -or $changed) {
+        Write-BootstrapLog "Force update requested or GitHub file changes found. Running updater with -Force."
 
         powershell.exe -NoProfile -ExecutionPolicy Bypass -File $UpdaterPath -Force
 
