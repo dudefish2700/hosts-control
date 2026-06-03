@@ -1,26 +1,35 @@
-# Install-HostsBlocklist.ps1
-# Downloads the latest hosts-control setup from GitHub,
-# installs it to C:\ProgramData\HostsBlocklist,
-# creates a silent startup scheduled task,
-# and runs the first update.
 param(
     [switch]$Silent
 )
+
+# Install-HostsBlocklist.ps1
+# Installs the local files, startup task, and GitHub bootstrap workflow.
+
 $ErrorActionPreference = "Stop"
 
-$InstallDir = "C:\ProgramData\HostsBlocklist"
-$BackupDir = Join-Path $InstallDir "Backups"
+$BaseDir = "C:\ProgramData\HostsBlocklist"
+$BackupDir = Join-Path $BaseDir "Backups"
 
-$ScriptDest = Join-Path $InstallDir "Update-HostsBlocklist.ps1"
-$BlockedDest = Join-Path $InstallDir "blocked-domains.txt"
-$AllowedDest = Join-Path $InstallDir "allowed-domains.txt"
-$LauncherDest = Join-Path $InstallDir "Run-HostsBlocklist-Silent.vbs"
+$UpdaterPath = Join-Path $BaseDir "Update-HostsBlocklist.ps1"
+$BootstrapPath = Join-Path $BaseDir "Run-HostsBlocklist-FromGitHub.ps1"
+$BlockedPath = Join-Path $BaseDir "blocked-domains.txt"
+$AllowedPath = Join-Path $BaseDir "allowed-domains.txt"
+$VbsPath = Join-Path $BaseDir "Run-HostsBlocklist-Silent.vbs"
 
 $TaskName = "Update Hosts Blocklist At Startup"
 
-$RemoteScriptUrl = "https://raw.githubusercontent.com/dudefish2700/hosts-control/refs/heads/main/Update-HostsBlocklist.ps1"
-$RemoteBlockedUrl = "https://raw.githubusercontent.com/dudefish2700/hosts-control/refs/heads/main/blocked-domains.txt"
-$RemoteAllowedUrl = "https://raw.githubusercontent.com/dudefish2700/hosts-control/refs/heads/main/allowed-domains.txt"
+$UpdaterUrl = "https://raw.githubusercontent.com/dudefish2700/hosts-control/refs/heads/main/Update-HostsBlocklist.ps1"
+$BootstrapUrl = "https://raw.githubusercontent.com/dudefish2700/hosts-control/refs/heads/main/Run-HostsBlocklist-FromGitHub.ps1"
+$BlockedUrl = "https://raw.githubusercontent.com/dudefish2700/hosts-control/refs/heads/main/blocked-domains.txt"
+$AllowedUrl = "https://raw.githubusercontent.com/dudefish2700/hosts-control/refs/heads/main/allowed-domains.txt"
+
+function Write-Step {
+    param([string]$Message)
+
+    if (-not $Silent) {
+        Write-Host $Message
+    }
+}
 
 function Test-IsAdmin {
     $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -28,27 +37,30 @@ function Test-IsAdmin {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Download-File {
+function Download-RequiredFile {
     param(
         [string]$Url,
-        [string]$Destination
+        [string]$DestinationPath,
+        [string]$Name
     )
 
-    $temp = "$Destination.tmp"
+    $tempPath = "$DestinationPath.tmp"
 
-    Invoke-WebRequest -Uri $Url -OutFile $temp -UseBasicParsing -TimeoutSec 120
+    Write-Step "Downloading $Name..."
 
-    if (-not (Test-Path $temp)) {
-        throw "Download failed: $Url"
+    Invoke-WebRequest -Uri $Url -OutFile $tempPath -UseBasicParsing -TimeoutSec 90
+
+    if (-not (Test-Path $tempPath)) {
+        throw "Download failed for $Name."
     }
 
-    $size = (Get-Item $temp).Length
+    $size = (Get-Item $tempPath).Length
 
     if ($size -lt 5) {
-        throw "Downloaded file is too small: $Url"
+        throw "Downloaded $Name looks too small."
     }
 
-    Move-Item -Path $temp -Destination $Destination -Force
+    Move-Item -Path $tempPath -Destination $DestinationPath -Force
 }
 
 function Remove-ScheduledTaskIfExists {
@@ -61,67 +73,82 @@ function Remove-ScheduledTaskIfExists {
     }
 }
 
-if (-not (Test-IsAdmin)) {
-    throw "This installer must be run as Administrator."
-}
+try {
+    if (-not (Test-IsAdmin)) {
+        throw "This installer must be run as Administrator."
+    }
 
-New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+    Write-Step ""
+    Write-Step "Installing hosts blocklist workflow..."
+    Write-Step ""
 
-Write-Host "Downloading latest setup files..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Path $BaseDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
 
-Download-File -Url $RemoteScriptUrl -Destination $ScriptDest
-Download-File -Url $RemoteBlockedUrl -Destination $BlockedDest
-Download-File -Url $RemoteAllowedUrl -Destination $AllowedDest
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-Write-Host "Creating silent launcher..." -ForegroundColor Cyan
+    Download-RequiredFile -Url $UpdaterUrl -DestinationPath $UpdaterPath -Name "updater script"
+    Download-RequiredFile -Url $BootstrapUrl -DestinationPath $BootstrapPath -Name "GitHub bootstrapper"
+    Download-RequiredFile -Url $BlockedUrl -DestinationPath $BlockedPath -Name "blocked domains list"
+    Download-RequiredFile -Url $AllowedUrl -DestinationPath $AllowedPath -Name "allowed domains list"
 
-@'
+    Write-Step "Creating silent launcher..."
+
+    $vbs = @'
 Set shell = CreateObject("WScript.Shell")
-command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""C:\ProgramData\HostsBlocklist\Update-HostsBlocklist.ps1"""
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""C:\ProgramData\HostsBlocklist\Run-HostsBlocklist-FromGitHub.ps1"" -ForceUpdate"
 exitCode = shell.Run(command, 0, True)
 WScript.Quit exitCode
-'@ | Set-Content -Path $LauncherDest -Encoding ASCII -Force
+'@
 
-Write-Host "Creating scheduled task..." -ForegroundColor Cyan
+    Set-Content -Path $VbsPath -Value $vbs -Encoding ASCII -Force
 
-Remove-ScheduledTaskIfExists -Name $TaskName
+    Write-Step "Creating scheduled startup task..."
 
-$OldWord = -join ([char[]](80,111,114,110))
-$OldDailyTask = "Update Anti-$OldWord Hosts File"
-$OldStartupTask = "Update Anti-$OldWord Hosts File At Startup"
+    Remove-ScheduledTaskIfExists -Name $TaskName
 
-Remove-ScheduledTaskIfExists -Name $OldDailyTask
-Remove-ScheduledTaskIfExists -Name $OldStartupTask
+    cmd.exe /c "schtasks /Create /TN `"$TaskName`" /SC ONSTART /DELAY 0005:00 /RU SYSTEM /RL HIGHEST /TR `"wscript.exe C:\ProgramData\HostsBlocklist\Run-HostsBlocklist-Silent.vbs`" /F"
 
-cmd.exe /c "schtasks /Create /TN `"$TaskName`" /SC ONSTART /DELAY 0005:00 /RU SYSTEM /RL HIGHEST /TR `"wscript.exe C:\ProgramData\HostsBlocklist\Run-HostsBlocklist-Silent.vbs`" /F"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create scheduled task."
+    }
 
-if ($LASTEXITCODE -ne 0) {
-    throw "Failed to create scheduled task."
+    Write-Step "Running first update..."
+
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File $BootstrapPath -ForceUpdate
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "First update failed with exit code $LASTEXITCODE."
+    }
+
+    Write-Step ""
+    Write-Step "Install completed successfully."
+    Write-Step ""
+    Write-Step "Installed folder:"
+    Write-Step $BaseDir
+    Write-Step ""
+    Write-Step "Scheduled task:"
+    Write-Step $TaskName
+
+    if (-not $Silent) {
+        Write-Step ""
+        Write-Step "Press Enter to close."
+        Read-Host
+    }
+
+    exit 0
 }
+catch {
+    Write-Error $_.Exception.Message
 
-Write-Host "Running first update. This may take a while..." -ForegroundColor Cyan
+    if (-not $Silent) {
+        Write-Host ""
+        Write-Host "Install failed."
+        Write-Host $_.Exception.Message
+        Write-Host ""
+        Write-Host "Press Enter to close."
+        Read-Host
+    }
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ScriptDest -Force
-
-Write-Host ""
-Write-Host "Installed successfully." -ForegroundColor Green
-Write-Host ""
-Write-Host "Installed files:"
-Write-Host $ScriptDest
-Write-Host $BlockedDest
-Write-Host $AllowedDest
-Write-Host $LauncherDest
-Write-Host ""
-Write-Host "Scheduled task:"
-schtasks /Query /TN "$TaskName" /V /FO LIST
-
-Write-Host ""
-Write-Host "Recent log:"
-Get-Content "C:\ProgramData\HostsBlocklist\update.log" -Tail 10 -ErrorAction SilentlyContinue
-
-if (-not $Silent) {
-    Write-Host ""
-    Write-Host "Press Enter to close."
-    Read-Host
+    exit 1
 }
