@@ -382,8 +382,16 @@ try {
         "",
         "204.79.197.220 www.bing.com",
         "204.79.197.220 bing.com",
-        "204.79.197.220 edgeservices.bing.com"
+        "204.79.197.220 edgeservices.bing.com",
+        "",
+        "216.239.38.119 www.youtube.com",
+        "216.239.38.119 m.youtube.com",
+        "216.239.38.119 youtubei.googleapis.com",
+        "216.239.38.119 youtube.googleapis.com",
+        "216.239.38.119 www.youtube-nocookie.com"
     )
+
+    $ForcedSearchEntryCount = @($ForcedSearchLines | Where-Object { $_.Trim() -ne "" }).Count
 
     $BlockedResult = Read-BlockedDomainsFile -Path $BlockedDomainsFile -AllowedLookup $AllowedLookup
     $BlockedSearchLines = $BlockedResult.Lines
@@ -404,12 +412,12 @@ try {
 
     $localPolicyBlock = @"
 $LocalStartMarker
-# Purpose: apply local search policy entries from editable domain files.
+# Purpose: apply local search and video filtering policy entries from editable domain files.
 # Blocked domains source: $BlockedDomainsFile
 # Allowed domains source: $AllowedDomainsFile
 # Updated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
-# Forced strict filtering
+# Forced SafeSearch and YouTube Moderate Restricted Mode
 $($ForcedSearchLines -join "`r`n")
 
 # Custom blocked domains
@@ -438,8 +446,8 @@ $BlockEndMarker
     $successStamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     [System.IO.File]::WriteAllText($LastSuccessPath, $successStamp)
 
-    Write-Log "Hosts update completed successfully. Blocklist entries applied: $($validHostLines.Count). Forced entries: $($ForcedSearchLines.Count). Custom blocked entries: $($BlockedSearchLines.Count). Allowed domains: $($AllowedDomains.Count). Downloaded allowed skips: $skippedDownloadedAllowed. Custom allowed skips: $skippedCustomAllowed."
-    Write-Output "SUCCESS: Hosts file updated. Blocklist entries applied: $($validHostLines.Count). Forced entries: $($ForcedSearchLines.Count). Custom blocked entries: $($BlockedSearchLines.Count). Allowed domains: $($AllowedDomains.Count). Downloaded allowed skips: $skippedDownloadedAllowed. Custom allowed skips: $skippedCustomAllowed."
+    Write-Log "Hosts update completed successfully. Blocklist entries applied: $($validHostLines.Count). Forced entries: $ForcedSearchEntryCount. Custom blocked entries: $($BlockedSearchLines.Count). Allowed domains: $($AllowedDomains.Count). Downloaded allowed skips: $skippedDownloadedAllowed. Custom allowed skips: $skippedCustomAllowed."
+    Write-Output "SUCCESS: Hosts file updated. Blocklist entries applied: $($validHostLines.Count). Forced entries: $ForcedSearchEntryCount. Custom blocked entries: $($BlockedSearchLines.Count). Allowed domains: $($AllowedDomains.Count). Downloaded allowed skips: $skippedDownloadedAllowed. Custom allowed skips: $skippedCustomAllowed."
 }
 catch {
     Write-Log "ERROR: $($_.Exception.Message)"
